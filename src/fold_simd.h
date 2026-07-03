@@ -1,9 +1,7 @@
 // SimdMFE — wavefront (anti-diagonal) SIMD folder with exact Turner 2004 energy.
 // Matrices stored diagonal-by-diagonal: D[s][i] holds cell (i, i+s). The O(N^3)
 // multibranch bifurcation FMbif(i,j)=min_k FM(i,k)+FM1(k+1,j) becomes, per split
-// span, a unit-stride vector add + min over i (NEON).
-// Templated on the storage type: int16_t (8 lanes, saturating) is the fast path;
-// int32_t (4 lanes) is the exact fallback when the optimum leaves 16-bit range.
+// span, a unit-stride vector add + min over i (NEON, 4x int32).
 #pragma once
 #include "energy.h"
 #include <vector>
@@ -15,21 +13,16 @@
 #endif
 
 namespace mfe {
+using en::INF;
 
-template<typename T> struct Traits;
-template<> struct Traits<int32_t> { static const int INFv = 1000000; };
-template<> struct Traits<int16_t> { static const int INFv = 25000; };  // faithful |dG|<1500 kcal
-
-template<typename T>
-struct FoldT {
-    static const int INF = Traits<T>::INFv;
+struct FoldSimd {
     int n = 0;
     std::vector<int> b;
     std::string seq;
     en::EM em;
-    std::vector<std::vector<T>> V, FM, FM1, FMbif;
-    std::vector<int32_t> Erow;             // exterior kept in 32-bit (O(n), cheap)
-    static const int PAD = 16;
+    std::vector<std::vector<int32_t>> V, FM, FM1, FMbif;
+    std::vector<int32_t> Erow;
+    static const int PAD = 8;
 
     void setSeq(const std::string& str) {
         seq = str; n = (int)str.size(); b.resize(n);
@@ -43,50 +36,40 @@ struct FoldT {
     int mlStem(int p,int q) const { return em.mlStem(p,q); }
     int extStem(int k,int j) const { return em.extStem(k,j); }
     int mlClose(int i,int j) const { return em.mlClose(i,j); }
-    static T clampT(int e) { return (T)(e >= INF ? INF : e); }
 
     void bifKernel(int s) {
         int m = n - s;
-        T* out = FMbif[s].data();
-        for (int i=0;i<m;++i) out[i]=(T)INF;
+        int32_t* out = FMbif[s].data();
+        for (int i=0;i<m;++i) out[i]=INF;
 #ifdef HAVE_NEON
         for (int a=0;a<s;++a) {
             int bsp=s-1-a;
-            const T* pa=FM[a].data();
-            const T* pb=FM1[bsp].data()+(a+1);
+            const int32_t* pa=FM[a].data();
+            const int32_t* pb=FM1[bsp].data()+(a+1);
             int i=0;
-            if (sizeof(T)==2) {
-                for (; i+8<=m; i+=8) {
-                    int16x8_t va=vld1q_s16((const int16_t*)pa+i), vb=vld1q_s16((const int16_t*)pb+i);
-                    int16x8_t sum=vqaddq_s16(va,vb);
-                    int16x8_t cur=vld1q_s16((int16_t*)out+i);
-                    vst1q_s16((int16_t*)out+i, vminq_s16(cur,sum));
-                }
-            } else {
-                for (; i+4<=m; i+=4) {
-                    int32x4_t va=vld1q_s32((const int32_t*)pa+i), vb=vld1q_s32((const int32_t*)pb+i);
-                    int32x4_t sum=vaddq_s32(va,vb);
-                    sum=vminq_s32(sum, vdupq_n_s32(2*INF));
-                    int32x4_t cur=vld1q_s32((int32_t*)out+i);
-                    vst1q_s32((int32_t*)out+i, vminq_s32(cur,sum));
-                }
+            for (; i+4<=m; i+=4) {
+                int32x4_t va=vld1q_s32(pa+i), vb=vld1q_s32(pb+i);
+                int32x4_t sum=vaddq_s32(va,vb);
+                sum=vminq_s32(sum, vdupq_n_s32(2*INF));
+                int32x4_t cur=vld1q_s32(out+i);
+                vst1q_s32(out+i, vminq_s32(cur,sum));
             }
             for (; i<m; ++i){ int va=pa[i],vb=pb[i];
-                if(va>=INF||vb>=INF) continue; int sm=va+vb; if(sm<out[i]) out[i]=(T)sm; }
+                if(va>=INF||vb>=INF) continue; int sm=va+vb; if(sm<out[i]) out[i]=sm; }
         }
 #else
         for (int a=0;a<s;++a){ int bsp=s-1-a;
-            const T* pa=FM[a].data(); const T* pb=FM1[bsp].data()+(a+1);
+            const int32_t* pa=FM[a].data(); const int32_t* pb=FM1[bsp].data()+(a+1);
             for (int i=0;i<m;++i){ int va=pa[i],vb=pb[i];
-                if(va>=INF||vb>=INF) continue; int sm=va+vb; if(sm<out[i]) out[i]=(T)sm; } }
+                if(va>=INF||vb>=INF) continue; int sm=va+vb; if(sm<out[i]) out[i]=sm; } }
 #endif
     }
 
     int fold() {
         V.assign(n,{}); FM.assign(n,{}); FM1.assign(n,{}); FMbif.assign(n,{});
         for (int s=0;s<n;++s){ int m=n-s;
-            V[s].assign(m+PAD,(T)INF); FM[s].assign(m+PAD,(T)INF);
-            FM1[s].assign(m+PAD,(T)INF); FMbif[s].assign(m+PAD,(T)INF); }
+            V[s].assign(m+PAD,INF); FM[s].assign(m+PAD,INF);
+            FM1[s].assign(m+PAD,INF); FMbif[s].assign(m+PAD,INF); }
         const int MLB = t2004::ML_BASE;
         for (int s=1;s<n;++s){
             int m=n-s;
@@ -109,20 +92,20 @@ struct FoldT {
                         if (bif<INF){ int cl=mlClose(i,j);
                             if (bif+cl<best) best=bif+cl; } }
                 }
-                V[s][i]=clampT(best);
+                V[s][i]=best;
             }
             for (int i=0;i<m;++i){
                 int j=i+s, f1=INF;
                 if (pt(i,j) && V[s][i]<INF) f1=V[s][i]+mlStem(i,j);
                 int ext=FM1[s-1][i]; if(ext<INF && ext+MLB<f1) f1=ext+MLB;
-                FM1[s][i]=clampT(f1);
+                FM1[s][i]=f1;
             }
             bifKernel(s);
             for (int i=0;i<m;++i){
                 int fm=FM1[s][i];
                 int u=FM[s-1][i+1]; if(u<INF && u+MLB<fm) fm=u+MLB;
                 if (FMbif[s][i]<fm) fm=FMbif[s][i];
-                FM[s][i]=clampT(fm);
+                FM[s][i]=fm;
             }
         }
         Erow.assign(n,0);
@@ -139,10 +122,10 @@ struct FoldT {
         return n?Erow[n-1]:0;
     }
 
-    int getV(int i,int j) const { int v=V[j-i][i]; return v>=INF?INF:v; }
-    int getFM(int i,int j) const { int v=FM[j-i][i]; return v>=INF?INF:v; }
-    int getFM1(int i,int j) const { int v=FM1[j-i][i]; return v>=INF?INF:v; }
-    int getFMbif(int i,int j) const { int v=FMbif[j-i][i]; return v>=INF?INF:v; }
+    int getV(int i,int j) const { return V[j-i][i]; }
+    int getFM(int i,int j) const { return FM[j-i][i]; }
+    int getFM1(int i,int j) const { return FM1[j-i][i]; }
+    int getFMbif(int i,int j) const { return FMbif[j-i][i]; }
 
     std::string traceback(int) {
         std::string dot(n,'.');
@@ -190,24 +173,6 @@ struct FoldT {
             traceFM(i+1,j,dot); return; }
         traceFMbif(i,j,dot);
     }
-};
-
-using FoldSimd   = FoldT<int32_t>;
-using FoldSimd16 = FoldT<int16_t>;
-
-// 16-bit fast path with exact 32-bit fallback when the optimum leaves range.
-struct Folder {
-    std::string seq; std::string dot; int energy=0;
-    void setSeq(const std::string& s){ seq=s; }
-    int fold() {
-        FoldSimd16 f16; f16.setSeq(seq);
-        int e = f16.fold();
-        // 16-bit faithful while |dG| well within range; else recompute exactly.
-        if (e > -14000 && e < 14000) { energy=e; dot=f16.traceback(e); return e; }
-        FoldSimd f32; f32.setSeq(seq); e=f32.fold();
-        energy=e; dot=f32.traceback(e); return e;
-    }
-    std::string traceback(int){ return dot; }
 };
 
 } // namespace mfe

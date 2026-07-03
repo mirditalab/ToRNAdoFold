@@ -1,5 +1,5 @@
-// Regression self-test: the int16 fast path must equal the exact int32 path
-// on sequences short enough to stay in 16-bit range (no fallback).
+// Self-consistency test: for random sequences the DP optimum must equal the
+// energy of its own traceback structure re-scored by the energy model.
 #include "fold_simd.h"
 #include <cstdio>
 #include <random>
@@ -13,12 +13,14 @@ int main() {
         for (int t = 0; t < 40; ++t) {
             std::string s;
             for (int i = 0; i < L; ++i) s += B[d(rng)];
-            mfe::FoldSimd   f32; f32.setSeq(s); int e32 = f32.fold();
-            mfe::FoldSimd16 f16; f16.setSeq(s); int e16 = f16.fold();
+            mfe::FoldSimd f; f.setSeq(s);
+            int e = f.fold();
+            std::string db = f.traceback(e);
+            int e2 = f.em.evalStructure(db);      // re-score the traceback
             tot++;
-            if (e32 != e16) { if (fails < 8) printf("MISMATCH L=%d i32=%d i16=%d\n%s\n", L, e32, e16, s.c_str()); fails++; }
+            if (e != e2) { if (fails < 8) printf("MISMATCH L=%d dp=%d eval=%d\n%s\n%s\n", L, e, e2, s.c_str(), db.c_str()); fails++; }
         }
     }
-    printf("verify: %d/%d agree (%d mismatches)\n", tot - fails, tot, fails);
+    printf("verify: %d/%d consistent (%d mismatches)\n", tot - fails, tot, fails);
     return fails ? 1 : 0;
 }
