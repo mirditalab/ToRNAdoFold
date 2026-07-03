@@ -1,0 +1,18 @@
+# compiled binaries
+/simdmfe
+/simdmfe_noneon
+/simdmfe_omp
+/simdmfe_v2
+/verify
+/kbench
+*.o
+*.dSYM/
+
+# stray tool outputs
+*.ps
+
+# benchmark data (fetched) and generated inputs / logs
+bench/archiveII/
+bench/archiveII.tar.gz
+bench/*.fa
+bench/*.log
