@@ -1,6 +1,11 @@
 CXX ?= clang++
 CXXFLAGS ?= -O3 -std=c++17 -Wall -Wno-missing-braces
+# OpenMP: plain -fopenmp on Linux (clang/gcc); Apple clang needs the libomp form.
+ifeq ($(shell uname -s),Darwin)
 OMPFLAGS ?= -Xpreprocessor -fopenmp -lomp
+else
+OMPFLAGS ?= -fopenmp
+endif
 
 HDRS = src/fold_simd.h src/energy.h src/t2004.h
 
