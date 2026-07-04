@@ -295,7 +295,7 @@ struct EM {
                 fprintf(stderr, "hairpin (%d,%d) %d\n", i, j, e);
             }
         } else if (ch.size() == 1) {
-            auto [p, q] = ch[0];
+            int p = ch[0].first, q = ch[0].second;
             e = eIntLoop(i, j, p, q) + getVvalRegion(pr, p, q, verbose);
             if (verbose) {
                 fprintf(stderr, "intloop (%d,%d;%d,%d) %d\n", i, j, p, q, eIntLoop(i, j, p, q));

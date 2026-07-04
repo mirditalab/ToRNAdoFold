@@ -1,5 +1,5 @@
 CXX ?= clang++
-CXXFLAGS ?= -O3 -std=c++17 -Wall -Wno-missing-braces
+CXXFLAGS ?= -O3 -std=c++11 -Wall
 # OpenMP: plain -fopenmp on Linux (clang/gcc); Apple clang needs the libomp form.
 ifeq ($(shell uname -s),Darwin)
 OMPFLAGS ?= -Xpreprocessor -fopenmp -lomp
