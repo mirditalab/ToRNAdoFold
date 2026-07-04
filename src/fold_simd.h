@@ -26,7 +26,16 @@ struct FoldSimd {
     std::vector<int> b;
     std::string seq;
     en::EM em;
-    std::vector<std::vector<int32_t>> V, FM, FM1, FMbif;
+    // Flat span-major storage: cell (i, i+s) lives at off[s] + i. Replaces
+    // vector<vector> to drop per-row heap overhead and the double-indirection
+    // in the internal-loop V gather.
+    std::vector<int32_t> Vf, FMf, FM1f;
+    // FMbif is not stored as a full O(N^2) matrix: each span's bifurcation row is
+    // consumed by FM (same span) and by V two spans later, so a 3-row rolling
+    // buffer (cycled by pointer) is enough. Traceback recomputes it from FM/FM1.
+    std::vector<int32_t> bifBuf;     // three n-length rows, cycled by pointer
+    int32_t *bifCur, *bifP1, *bifP2; // FMbif rows for span s, s-1, s-2
+    std::vector<int> off;            // off[s] = flat start of span s; size n+1
     std::vector<int32_t> Erow;
     static const int PAD = 8;
 
@@ -64,14 +73,14 @@ struct FoldSimd {
 
     void bifKernel(int s) {
         int m = n - s;
-        int32_t* out = FMbif[s].data();
+        int32_t* out = bifCur;
         for (int i = 0; i < m; ++i) {
             out[i] = INF;
         }
         for (int a = 0; a < s; ++a) {
             int bsp = s - 1 - a;
-            const int32_t* pa = FM[a].data();
-            const int32_t* pb = FM1[bsp].data() + (a + 1);
+            const int32_t* pa = FMf.data() + off[a];
+            const int32_t* pb = FM1f.data() + off[bsp] + (a + 1);
             int i = 0;
 #ifdef HAVE_NEON
             for (; i + 4 <= m; i += 4) {
@@ -97,17 +106,19 @@ struct FoldSimd {
     }
 
     int fold() {
-        V.assign(n, {});
-        FM.assign(n, {});
-        FM1.assign(n, {});
-        FMbif.assign(n, {});
+        off.resize(n + 1);
+        off[0] = 0;
         for (int s = 0; s < n; ++s) {
-            int m = n - s;
-            V[s].assign(m + PAD, INF);
-            FM[s].assign(m + PAD, INF);
-            FM1[s].assign(m + PAD, INF);
-            FMbif[s].assign(m + PAD, INF);
+            off[s + 1] = off[s] + (n - s);
         }
+        const int tot = off[n];
+        Vf.assign(tot + PAD, INF);
+        FMf.assign(tot + PAD, INF);
+        FM1f.assign(tot + PAD, INF);
+        bifBuf.assign(3 * (size_t)n + PAD, INF);
+        bifCur = bifBuf.data();
+        bifP1 = bifBuf.data() + n;
+        bifP2 = bifBuf.data() + 2 * (size_t)n;
         const int MLB = t2004::ML_BASE;
         for (int s = 1; s < n; ++s) {
             int m = n - s;
@@ -122,7 +133,7 @@ struct FoldSimd {
                         int minq = std::max(a + 1, j - 1 - (30 - n1));
                         for (int c = j - 1; c >= minq; --c) {
                             // minq bounds n1+n2 <= 30, so no explicit MAXLOOP check needed
-                            int v2 = V[c - a][a];
+                            int v2 = Vf[off[c - a] + a];
                             if (v2 >= INF) {
                                 continue;
                             }
@@ -139,7 +150,7 @@ struct FoldSimd {
                         }
                     }
                     if (s - 2 >= 1) {
-                        int bif = FMbif[s - 2][i + 1];
+                        int bif = bifP2[i + 1];
                         if (bif < INF) {
                             int cl = mlClose(i, j);
                             if (bif + cl < best) {
@@ -148,37 +159,43 @@ struct FoldSimd {
                         }
                     }
                 }
-                V[s][i] = best;
+                Vf[off[s] + i] = best;
             }
             for (int i = 0; i < m; ++i) {
                 int j = i + s, f1 = INF;
-                if (pt(i, j) && V[s][i] < INF) {
-                    f1 = V[s][i] + mlStem(i, j);
+                if (pt(i, j) && Vf[off[s] + i] < INF) {
+                    f1 = Vf[off[s] + i] + mlStem(i, j);
                 }
-                int ext = FM1[s - 1][i];
+                int ext = FM1f[off[s - 1] + i];
                 if (ext < INF && ext + MLB < f1) {
                     f1 = ext + MLB;
                 }
-                FM1[s][i] = f1;
+                FM1f[off[s] + i] = f1;
             }
             bifKernel(s);
             for (int i = 0; i < m; ++i) {
-                int fm = FM1[s][i];
-                int u = FM[s - 1][i + 1];
+                int fm = FM1f[off[s] + i];
+                int u = FMf[off[s - 1] + (i + 1)];
                 if (u < INF && u + MLB < fm) {
                     fm = u + MLB;
                 }
-                if (FMbif[s][i] < fm) {
-                    fm = FMbif[s][i];
+                int bv = bifCur[i];
+                if (bv < fm) {
+                    fm = bv;
                 }
-                FM[s][i] = fm;
+                FMf[off[s] + i] = fm;
             }
+            // cycle rolling FMbif rows: cur -> P1 -> P2 -> recycled -> cur
+            int32_t* t = bifCur;
+            bifCur = bifP2;
+            bifP2 = bifP1;
+            bifP1 = t;
         }
         Erow.assign(n, 0);
         for (int j = 0; j < n; ++j) {
             int e = (j > 0) ? Erow[j - 1] : 0;
             for (int k = 0; k <= j; ++k) {
-                int v = V[j - k][k];
+                int v = Vf[off[j - k] + k];
                 if (v >= INF) {
                     continue;
                 }
@@ -194,16 +211,23 @@ struct FoldSimd {
     }
 
     int getV(int i, int j) const {
-        return V[j - i][i];
+        return Vf[off[j - i] + i];
     }
     int getFM(int i, int j) const {
-        return FM[j - i][i];
+        return FMf[off[j - i] + i];
     }
     int getFM1(int i, int j) const {
-        return FM1[j - i][i];
+        return FM1f[off[j - i] + i];
     }
     int getFMbif(int i, int j) const {
-        return FMbif[j - i][i];
+        int v = INF;
+        for (int k = i; k < j; ++k) {
+            int a = getFM(i, k), c = getFM1(k + 1, j);
+            if (a < INF && c < INF && a + c < v) {
+                v = a + c;
+            }
+        }
+        return v;
     }
 
     std::string traceback(int) {
