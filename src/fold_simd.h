@@ -11,6 +11,10 @@
 #include <arm_neon.h>
 #define HAVE_NEON 1
 #endif
+#if defined(__wasm_simd128__) && !defined(DISABLE_NEON)
+#include <wasm_simd128.h>
+#define HAVE_WASM_SIMD 1
+#endif
 
 namespace mfe {
 using en::INF;
@@ -89,6 +93,14 @@ struct FoldSimd {
                 sum = vminq_s32(sum, vdupq_n_s32(2 * INF));
                 int32x4_t cur = vld1q_s32(out + i);
                 vst1q_s32(out + i, vminq_s32(cur, sum));
+            }
+#elif defined(HAVE_WASM_SIMD)
+            for (; i + 4 <= m; i += 4) {
+                v128_t va = wasm_v128_load(pa + i), vb = wasm_v128_load(pb + i);
+                v128_t sum = wasm_i32x4_add(va, vb);
+                sum = wasm_i32x4_min(sum, wasm_i32x4_splat(2 * INF));
+                v128_t cur = wasm_v128_load(out + i);
+                wasm_v128_store(out + i, wasm_i32x4_min(cur, sum));
             }
 #endif
             // scalar tail (NEON remainder), or the whole span when NEON is off

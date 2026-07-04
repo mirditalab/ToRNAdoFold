@@ -16,3 +16,9 @@ bench/archiveII/
 bench/archiveII.tar.gz
 bench/*.fa
 bench/*.log
+
+# WebAssembly build artifacts (built in CI, deployed to Pages)
+/web/simdmfe.js
+/web/simdmfe.wasm
+/web/simdmfe-simd.js
+/web/simdmfe-simd.wasm

@@ -25,7 +25,19 @@ simdmfe_noneon: src/main.cpp $(HDRS)
 verify: src/verify.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ src/verify.cpp
 
-clean:
-	rm -f simdmfe simdmfe_omp simdmfe_noneon verify
+EMCC ?= emcc
+EMFLAGS ?= -O3 -std=c++17 -Isrc -lembind \
+	-sMODULARIZE=1 -sEXPORT_NAME=createSimdMFE -sENVIRONMENT=web,worker \
+	-sINITIAL_MEMORY=268435456
 
-.PHONY: all clean
+wasm: web/simdmfe.js web/simdmfe-simd.js
+web/simdmfe.js: web/fold_wasm.cpp $(HDRS)
+	$(EMCC) $(EMFLAGS) -o $@ web/fold_wasm.cpp
+web/simdmfe-simd.js: web/fold_wasm.cpp $(HDRS)
+	$(EMCC) $(EMFLAGS) -msimd128 -o $@ web/fold_wasm.cpp
+
+clean:
+	rm -f simdmfe simdmfe_omp simdmfe_noneon verify \
+	  web/simdmfe.js web/simdmfe.wasm web/simdmfe-simd.js web/simdmfe-simd.wasm
+
+.PHONY: all clean wasm
