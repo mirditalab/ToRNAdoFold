@@ -86,17 +86,22 @@ int main(int argc, char** argv) {
     std::vector<double> tms(N);
     auto tw0 = std::chrono::high_resolution_clock::now();
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel
 #endif
-    for (int k = 0; k < N; ++k) {
+    {
+        // one folder per thread, reused across sequences (buffers amortise)
         tornadofold::TornadoFold f;
-        f.setSeq(seqs[k].second);
-        auto t0 = std::chrono::high_resolution_clock::now();
-        int e = f.fold();
-        auto t1 = std::chrono::high_resolution_clock::now();
-        tms[k] = std::chrono::duration<double, std::milli>(t1 - t0).count();
-        ens[k] = e;
-        dbs[k] = f.traceback(e);
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic)
+#endif
+        for (int k = 0; k < N; ++k) {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            int e = f.fold(seqs[k].second);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            tms[k] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            ens[k] = e;
+            dbs[k] = f.traceback(e);
+        }
     }
     auto tw1 = std::chrono::high_resolution_clock::now();
     double wall = std::chrono::duration<double, std::milli>(tw1 - tw0).count();

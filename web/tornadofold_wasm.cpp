@@ -25,8 +25,7 @@ static std::string foldSeq(const std::string& seq) {
         return std::string("\t0");
     }
     tornadofold::TornadoFold f;
-    f.setSeq(s);
-    int e = f.fold();
+    int e = f.fold(s);
     std::string db = f.traceback(e);
     return db + "\t" + std::to_string(e);
 }

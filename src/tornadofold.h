@@ -63,19 +63,6 @@ struct TornadoFold {
     std::vector<int32_t> Erow;
     static const int PAD = 8;
 
-    void setSeq(const std::string& str) {
-        seq = str;
-        n = (int)str.size();
-        b.resize(n);
-        for (int i = 0; i < n; ++i) {
-            char c = str[i];
-            b[i] = (c == 'A')   ? 0
-                   : (c == 'C') ? 1
-                   : (c == 'G') ? 2
-                                : ((c == 'U' || c == 'T') ? 3 : 4);
-        }
-        em.set(seq, b.data(), n);
-    }
     int pt(int i, int j) const {
         return em.pt(i, j);
     }
@@ -164,7 +151,18 @@ struct TornadoFold {
         }
     }
 
-    int fold() {
+    int fold(const std::string& str) {
+        seq = str;
+        n = (int)str.size();
+        b.resize(n);
+        for (int i = 0; i < n; ++i) {
+            char c = str[i];
+            b[i] = (c == 'A')   ? 0
+                   : (c == 'C') ? 1
+                   : (c == 'G') ? 2
+                                : ((c == 'U' || c == 'T') ? 3 : 4);
+        }
+        em.set(seq, b.data(), n);
         off.resize(n + 1);
         off[0] = 0;
         for (int s = 0; s < n; ++s) {

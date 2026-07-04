@@ -16,8 +16,7 @@ int main() {
                 s += B[d(rng)];
             }
             tornadofold::TornadoFold f;
-            f.setSeq(s);
-            int e = f.fold();
+            int e = f.fold(s);
             std::string db = f.traceback(e);
             int e2 = f.em.evalStructure(db); // re-score the traceback
             tot++;

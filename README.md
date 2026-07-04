@@ -39,9 +39,8 @@ target_link_libraries(myapp PRIVATE tornadofold::tornadofold)
 #include "tornadofold.h"
 
 tornadofold::TornadoFold f;
-f.setSeq("GGGGAAAACCCC");
 // minimum free energy, in 0.01 kcal/mol
-int mfe = f.fold();
+int mfe = f.fold("GGGGAAAACCCC");
 // dot-bracket
 std::string structure = f.traceback(mfe);
 ```
