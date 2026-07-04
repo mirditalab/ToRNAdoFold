@@ -15,6 +15,18 @@
 #include <wasm_simd128.h>
 #define HAVE_WASM_SIMD 1
 #endif
+#if defined(__AVX512F__) && !defined(DISABLE_NEON)
+#include <immintrin.h>
+#define HAVE_AVX512 1
+#endif
+#if defined(__AVX2__) && !defined(DISABLE_NEON)
+#include <immintrin.h>
+#define HAVE_AVX2 1
+#endif
+#if defined(__SSE2__) && !defined(DISABLE_NEON)
+#include <emmintrin.h>
+#define HAVE_SSE2 1
+#endif
 
 namespace mfe {
 using en::INF;
@@ -24,6 +36,14 @@ using en::INF;
 // units) across the Turner 2004 tables (stack/int11/int21/int22/general all
 // >= -340). Used for an exact prune of the O(MAXLOOP^2) internal-loop scan.
 static const int SINGLE_LOOP_LB = -340;
+
+#ifdef HAVE_SSE2
+// SSE2 has no signed 32-bit min (that is SSE4.1); emulate with compare + select.
+static inline __m128i sse2_min_epi32(__m128i a, __m128i b) {
+    __m128i lt = _mm_cmpgt_epi32(b, a); // 0xFFFFFFFF where a < b
+    return _mm_or_si128(_mm_and_si128(lt, a), _mm_andnot_si128(lt, b));
+}
+#endif
 
 struct FoldSimd {
     int n = 0;
@@ -102,8 +122,35 @@ struct FoldSimd {
                 v128_t cur = wasm_v128_load(out + i);
                 wasm_v128_store(out + i, wasm_i32x4_min(cur, sum));
             }
+#elif defined(HAVE_AVX512)
+            for (; i + 16 <= m; i += 16) {
+                __m512i va = _mm512_loadu_si512((const void*)(pa + i));
+                __m512i vb = _mm512_loadu_si512((const void*)(pb + i));
+                __m512i sum = _mm512_add_epi32(va, vb);
+                sum = _mm512_min_epi32(sum, _mm512_set1_epi32(2 * INF));
+                __m512i cur = _mm512_loadu_si512((const void*)(out + i));
+                _mm512_storeu_si512((void*)(out + i), _mm512_min_epi32(cur, sum));
+            }
+#elif defined(HAVE_AVX2)
+            for (; i + 8 <= m; i += 8) {
+                __m256i va = _mm256_loadu_si256((const __m256i*)(pa + i));
+                __m256i vb = _mm256_loadu_si256((const __m256i*)(pb + i));
+                __m256i sum = _mm256_add_epi32(va, vb);
+                sum = _mm256_min_epi32(sum, _mm256_set1_epi32(2 * INF));
+                __m256i cur = _mm256_loadu_si256((const __m256i*)(out + i));
+                _mm256_storeu_si256((__m256i*)(out + i), _mm256_min_epi32(cur, sum));
+            }
+#elif defined(HAVE_SSE2)
+            for (; i + 4 <= m; i += 4) {
+                __m128i va = _mm_loadu_si128((const __m128i*)(pa + i));
+                __m128i vb = _mm_loadu_si128((const __m128i*)(pb + i));
+                __m128i sum = _mm_add_epi32(va, vb);
+                sum = sse2_min_epi32(sum, _mm_set1_epi32(2 * INF));
+                __m128i cur = _mm_loadu_si128((const __m128i*)(out + i));
+                _mm_storeu_si128((__m128i*)(out + i), sse2_min_epi32(cur, sum));
+            }
 #endif
-            // scalar tail (NEON remainder), or the whole span when NEON is off
+            // scalar tail (SIMD remainder), or the whole span when SIMD is off
             for (; i < m; ++i) {
                 int va = pa[i], vb = pb[i];
                 if (va >= INF || vb >= INF) {

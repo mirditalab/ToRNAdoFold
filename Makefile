@@ -1,5 +1,8 @@
 CXX ?= clang++
-CXXFLAGS ?= -O3 -std=c++11 -Wall
+ifneq (,$(filter x86_64 amd64,$(shell uname -m)))
+SIMDFLAGS ?= -mavx2
+endif
+CXXFLAGS ?= -O3 -std=c++11 -Wall $(SIMDFLAGS)
 # OpenMP: plain -fopenmp on Linux (clang/gcc); Apple clang needs the libomp form.
 ifeq ($(shell uname -s),Darwin)
 OMPFLAGS ?= -Xpreprocessor -fopenmp -lomp
