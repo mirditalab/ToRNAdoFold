@@ -1,6 +1,6 @@
-// SimdMFE driver: reads FASTA (or one seq per line) from stdin/file, prints
+// tornadofold driver: reads FASTA (or one seq per line) from stdin/file, prints
 // dot-bracket and MFE. Scalar reference path (fold.h).
-#include "fold_simd.h"
+#include "tornadofold.h"
 #include <cstdio>
 #include <iostream>
 #include <chrono>
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
 #pragma omp parallel for schedule(dynamic)
 #endif
     for (int k = 0; k < N; ++k) {
-        mfe::FoldSimd f;
+        tornadofold::TornadoFold f;
         f.setSeq(seqs[k].second);
         auto t0 = std::chrono::high_resolution_clock::now();
         int e = f.fold();

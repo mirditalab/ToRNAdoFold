@@ -1,8 +1,8 @@
 # compiled binaries
-/simdmfe
-/simdmfe_noneon
-/simdmfe_omp
-/simdmfe_v2
+/tornadofold
+/tornadofold_noneon
+/tornadofold_omp
+/tornadofold_v2
 /verify
 /kbench
 *.o
@@ -18,7 +18,7 @@ bench/*.fa
 bench/*.log
 
 # WebAssembly build artifacts (built in CI, deployed to Pages)
-/web/simdmfe.js
-/web/simdmfe.wasm
-/web/simdmfe-simd.js
-/web/simdmfe-simd.wasm
+/web/tornadofold.js
+/web/tornadofold.wasm
+/web/tornadofold-simd.js
+/web/tornadofold-simd.wasm

@@ -10,19 +10,19 @@ else
 OMPFLAGS ?= -fopenmp
 endif
 
-HDRS = src/fold_simd.h src/energy.h src/t2004.h
+HDRS = src/tornadofold.h src/energy.h src/t2004.h
 
-all: simdmfe verify
+all: tornadofold verify
 
-simdmfe: src/main.cpp $(HDRS)
+tornadofold: src/main.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ src/main.cpp
 
 # OpenMP batch build (needs libomp: brew install libomp)
-simdmfe_omp: src/main.cpp $(HDRS)
+tornadofold_omp: src/main.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) $(OMPFLAGS) -o $@ src/main.cpp
 
 # NEON disabled, isolates the scalar constant factor
-simdmfe_noneon: src/main.cpp $(HDRS)
+tornadofold_noneon: src/main.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -DDISABLE_NEON -o $@ src/main.cpp
 
 verify: src/verify.cpp $(HDRS)
@@ -30,17 +30,17 @@ verify: src/verify.cpp $(HDRS)
 
 EMCC ?= emcc
 EMFLAGS ?= -O3 -std=c++17 -Isrc -lembind \
-	-sMODULARIZE=1 -sEXPORT_NAME=createSimdMFE -sENVIRONMENT=web,worker \
+	-sMODULARIZE=1 -sEXPORT_NAME=tornadofold -sENVIRONMENT=web,worker \
 	-sINITIAL_MEMORY=268435456
 
-wasm: web/simdmfe.js web/simdmfe-simd.js
-web/simdmfe.js: web/fold_wasm.cpp $(HDRS)
-	$(EMCC) $(EMFLAGS) -o $@ web/fold_wasm.cpp
-web/simdmfe-simd.js: web/fold_wasm.cpp $(HDRS)
-	$(EMCC) $(EMFLAGS) -msimd128 -o $@ web/fold_wasm.cpp
+wasm: web/tornadofold.js web/tornadofold-simd.js
+web/tornadofold.js: web/tornadofold_wasm.cpp $(HDRS)
+	$(EMCC) $(EMFLAGS) -o $@ web/tornadofold_wasm.cpp
+web/tornadofold-simd.js: web/tornadofold_wasm.cpp $(HDRS)
+	$(EMCC) $(EMFLAGS) -msimd128 -o $@ web/tornadofold_wasm.cpp
 
 clean:
-	rm -f simdmfe simdmfe_omp simdmfe_noneon verify \
-	  web/simdmfe.js web/simdmfe.wasm web/simdmfe-simd.js web/simdmfe-simd.wasm
+	rm -f tornadofold tornadofold_omp tornadofold_noneon verify \
+	  web/tornadofold.js web/tornadofold.wasm web/tornadofold-simd.js web/tornadofold-simd.wasm
 
 .PHONY: all clean wasm

@@ -1,6 +1,6 @@
 // Self-consistency test: for random sequences the DP optimum must equal the
 // energy of its own traceback structure re-scored by the energy model.
-#include "fold_simd.h"
+#include "tornadofold.h"
 #include <cstdio>
 #include <random>
 
@@ -15,7 +15,7 @@ int main() {
             for (int i = 0; i < L; ++i) {
                 s += B[d(rng)];
             }
-            mfe::FoldSimd f;
+            tornadofold::TornadoFold f;
             f.setSeq(s);
             int e = f.fold();
             std::string db = f.traceback(e);
